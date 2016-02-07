@@ -1,25 +1,104 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
+title: "RepData_PeerAssessment1"
+author: "David Colon"
+date: "2/6/2016"
 output: 
-  html_document:
-    keep_md: true
+  html_document: 
+    toc: yes
+    keep_md: yes
 ---
 
 
-## Loading and preprocessing the data
+```{r}
+if (!is.element('data.table', installed.packages()[,1]))
+  install.packages('data.table', dep = TRUE)
+require(data.table) 
+require(ggplot2) 
+
+# Create/set initial Working Directory
+dir.create('~/R/', showWarnings = FALSE)
+setwd('~/R/')
+
+```
+```{r}
+# Get the data if not gotten
+dataURL='https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip'
+dataFile='repdata%2Fdata%2Factivity.zip'
+if (!file.exists(dataFile)){  download.file(dataURL, destfile = dataFile)  }
+
+# Unzip and get the zip file names
+fileList <- unzip(dataFile, list=TRUE)
+mainDataF <- fileList[,"Name"][1]
+if (!file.exists(mainDataF)){ unzip(dataFile, overwrite = FALSE, setTimes = TRUE) }
+```
+
+```{r}
+# Convert Files to data.tables
+mainDT <- fread(mainDataF)
+```
 
 
+```{r}
+# mean() total number of steps
+Daily_steps <- mainDT[steps != 'NA', .(Daily_steps=sum(steps)), by=.(date)]
+hist(Daily_steps$Daily_steps, breaks=dim(Daily_steps)[1],xlab='Daily Steps', main='Histogram of Daily Steps')
+```
 
-## What is mean total number of steps taken per day?
+### Mean and Median Steps by Date
+```{r}
+mainDT[steps != 'NA' , .(interval), keyby=.(date,steps) ][, .( Mean=mean(steps), Median=median(steps) ), by=.(Date=date) ]
+```
 
+```{r}
+stepsByinteral <- mainDT[steps != 'NA' , .(AST=mean(steps)), by=.(Interval=interval) ]
+qplot(data=stepsByinteral, x=Interval, y=AST, 
+      main = 'Daily Activity Pattern', 
+      ylab = 'Average Steps Taken', 
+      geom=c('line','point'), alpha=I(.8), color=AST)
+```
 
+### Highest Average Steps by Interval
+```{r}
+stepsByinteral[AST==stepsByinteral[,.(max(AST))] ]
+```
 
-## What is the average daily activity pattern?
+### Missing Values
+```{r}
+mainDT[is.na(steps), .('NA Count'=sum(is.na(steps))) ]
+```
 
+```{r}
+## Merge the DT with average steps take to the original 'mainDT' to 'mainCleanDT'
+mainCleanDT <- merge(x = mainDT, y = stepsByinteral, by.x = 'interval', by.y = 'Interval', all.x = TRUE)
+## set NA in steps to average for that Interval
+mainCleanDT[is.na(steps), steps := round(AST, digits = 0)]
+```
 
+```{r}
+DlyStepsClean <- mainCleanDT[, .(DSClean=sum(steps)), by=.(date)]
+hist(DlyStepsClean$DSClean, breaks=dim(DlyStepsClean)[1],xlab='Daily Steps', main='Histogram of Daily Steps Clean Data')
+```
 
-## Imputing missing values
+### Mean and Median Steps by Date Cleaned Data
+```{r}
+mainCleanDT[, .(interval), keyby=.(date,steps) ][, .( Mean=mean(steps), Median=median(steps) ), by=.(Date=date) ]
+```
 
+#### Weekdays
+```{r}
+## Create a weekday factor of 1|0
+#mainCleanDT[,weekday := NULL]
+mainCleanDT[weekdays(as.POSIXct(mainCleanDT$date)) == c('Saturday','Sunday'), weekday := as.factor('weekend')]
+mainCleanDT[weekdays(as.POSIXct(mainCleanDT$date)) != c('Saturday','Sunday'), weekday := as.factor('weekday')]
+```
 
+```{r}
+## 
+mainCleanDT[weekday == 'weekday', AWST := .('AST'=mean(steps)), by=.(interval) ]
+mainCleanDT[weekday == 'weekend', AWST := .('AST'=mean(steps)), by=.(interval) ]
 
-## Are there differences in activity patterns between weekdays and weekends?
+q <- qplot(data=mainCleanDT, x=interval, y=AWST, 
+      main = 'Daily Activity Pattern', 
+      ylab = 'Average Steps Taken',  geom='line', alpha=I(.8), color=AWST)
+q + facet_wrap(~weekday, ncol=1)
+```
